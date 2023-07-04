@@ -81,8 +81,21 @@ def regenerate_quary_for_instance(alert_data):
     query_expr = urllib.parse.unquote(query_expr).replace('+', ' ')
 
     def remove_comparison_strings(s):
-        pattern = r'<\s*\d+|\s*>\s*\d+|<\s*\d+\s*>|\s*>\s*\d+\s*'  # 匹配所有大于小于空格数字组合的正则表达式
-        return re.sub(pattern, "", s)  # 使用sub函数替换所有匹配到的组合为“”
+        # 非常非常Hack的部分，但是是好用的，先移除比较符号，再移除负小数，再移除小数，再移除整数
+        # pattern = r'<\s*\d+|\s*>\s*\d+|<\s*\d+\s*>|\s*>\s*\d+\s*'  # 匹配所有大于小于空格数字组合的正则表达式
+        import re
+        pattern = r"<|>"
+        result = re.sub(pattern, "", s)
+        pattern = r"\b-\d+\.\d+\b|\b-\d+\b\.\d+\b|-\d+\b|-\.\d+|\b\d+\.\d+\b|\b\d+\b\.\d+\b|\.\d+"
+        result = re.sub(pattern, "", result)
+        pattern = r"\b-\d+\.\d+\b|\b-\d+\b\.\b\d+\b|-\.\b\d+\b"
+        result = re.sub(pattern, "", result)
+        pattern = r"\b\d+\.\d+\b|\b\d+\b\.\b\d+\b|\.\b\d+\b"
+        result = re.sub(pattern, "", result)
+        pattern = r"\b\d+\b"
+        result = re.sub(pattern, "", result)
+        return result
+
 
     logging.info(query_expr)
     query_expr_no_comparison = remove_comparison_strings(query_expr)
@@ -202,9 +215,9 @@ def handle_alert_svg():
     ext_url = alerts_data["alerts"][0]['labels']["ext_url"]
     # 从generatorURL字段中提取查询表达式和时间戳信息
     query_expr = re.search(r"g0\.expr=(.*?)&", generator_url).group(1)
-
     # replace comparison strings, quary all serial...
     query_expr = regenerate_quary_for_instance(alerts_data)
+
 
     if alerts_data["alerts"][0]["status"] == "reslved":
         start_time = int(datetime.strptime(
