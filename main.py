@@ -53,24 +53,28 @@ def save_file_s3(local_file_path, filename):
     s3.upload_file(local_file_path, bucket_name, s3_object_key)
 
 
-def data_instance_filter(alerts, graph_data, instanceID):
+def data_instance_filter(alerts, graph_data, instanceIdZips):
     info = get_current_business_info(alerts)
     if graph_data is None:
         return None
     if info['type'] == 1:
-        return list(filter(lambda x: x['metric']['instance'] in instanceID, graph_data))
+        return list(filter(lambda x: x['metric']['instance'] in map(lambda y : y[0], instanceIdZips) and (lambda x: x['metric']['instance_name'] in map(lambda y : y[1], instanceIdZips)) ,  graph_data))
     elif info['type'] == 2:
-        return list(filter(lambda x: x['metric']['instance'] in instanceID, graph_data))
+        return list(filter(lambda x: x['metric']['instance'] in map(lambda y : y[0], instanceIdZips) and (lambda x: x['metric']['instanceName'] in map(lambda y : y[1], instanceIdZips)) , graph_data))
     
 
 def get_id_from_alerts(alerts):
     info = get_current_business_info(alerts)
     if info['type'] == 1:
         instanceIds = list(map(lambda x: x['labels']["instance"], alerts["alerts"]))
+        instanceNms = list(map(lambda x: x['labels']["instance_name"], alerts["alerts"]))
     elif info['type'] == 2:
         instanceIds = list(map(lambda x: x['labels']["instance"], alerts["alerts"]))
-    logging.info(instanceIds)
-    return instanceIds
+        instanceNms = list(map(lambda x: x['labels']["instanceName"], alerts["alerts"]))
+    # 使用两个纬度来定位一个资源
+    instanceIdZips = list(zip(instanceIds, instanceNms))
+    logging.info(instanceIdZips)
+    return instanceIdZips
 
 @time_es
 def regenerate_quary_for_instance(alert_data):
@@ -82,9 +86,9 @@ def regenerate_quary_for_instance(alert_data):
 
     def remove_comparison_strings(s):
         # 非常非常Hack的部分，但是是好用的，先移除比较符号，再移除负小数，再移除小数，再移除整数
-        # pattern = r'<\s*\d+|\s*>\s*\d+|<\s*\d+\s*>|\s*>\s*\d+\s*'  # 匹配所有大于小于空格数字组合的正则表达式
+        
         import re
-        pattern = r"<|>"
+        pattern = r'<\s*\d+|\s*>\s*\d+|<\s*\d+\s*>|\s*>\s*\d+\s*'  # 匹配所有大于小于空格数字组合的正则表达式
         result = re.sub(pattern, "", s)
         pattern = r"\b-\d+\.\d+\b|\b-\d+\b\.\d+\b|-\d+\b|-\.\d+|\b\d+\.\d+\b|\b\d+\b\.\d+\b|\.\d+"
         result = re.sub(pattern, "", result)
@@ -92,8 +96,10 @@ def regenerate_quary_for_instance(alert_data):
         result = re.sub(pattern, "", result)
         pattern = r"\b\d+\.\d+\b|\b\d+\b\.\b\d+\b|\.\b\d+\b"
         result = re.sub(pattern, "", result)
-        pattern = r"\b\d+\b"
+        pattern = r"<|>"
         result = re.sub(pattern, "", result)
+        # pattern = r"\b[1-9]+\d*\b"
+        # result = re.sub(pattern, "", result)
         return result
 
 
@@ -215,8 +221,10 @@ def handle_alert_svg():
     ext_url = alerts_data["alerts"][0]['labels']["ext_url"]
     # 从generatorURL字段中提取查询表达式和时间戳信息
     query_expr = re.search(r"g0\.expr=(.*?)&", generator_url).group(1)
+    print(query_expr)
     # replace comparison strings, quary all serial...
     query_expr = regenerate_quary_for_instance(alerts_data)
+    print(query_expr)
 
 
     if alerts_data["alerts"][0]["status"] == "reslved":
