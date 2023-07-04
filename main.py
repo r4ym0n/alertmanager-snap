@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 import requests
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -49,6 +49,25 @@ def save_file_s3(local_file_path, filename):
     # 上传文件到 S3
     s3.upload_file(local_file_path, bucket_name, s3_object_key)
 
+@time_es
+def regenerate_quary_for_instance(alert_data):
+    generator_url = alert_data["alerts"][0]["generatorURL"]
+    query_expr = re.search(r"g0\.expr=(.*?)&", generator_url).group(1)
+    import urllib.parse 
+    query_expr = urllib.parse.unquote(query_expr).replace('+', ' ')
+    def remove_comparison_strings(s):
+        pattern = r'<\s*\d+|\s*>\s*\d+|<\s*\d+\s*>|\s*>\s*\d+\s*' # 匹配所有大于小于空格数字组合的正则表达式
+        return re.sub(pattern, "", s)  # 使用sub函数替换所有匹配到的组合为“”
+
+
+    logging.info(query_expr) 
+    query_expr_no_comparison = remove_comparison_strings(query_expr)
+    logging.info(query_expr_no_comparison) 
+    
+
+    return query_expr_no_comparison
+
+
 
 @time_es
 def get_graph_data(prometheus_url, query, start_time, end_time, x_header=""):
@@ -61,10 +80,10 @@ def get_graph_data(prometheus_url, query, start_time, end_time, x_header=""):
     #     "step": "15s"
     # }
     headers = {"X-Scope-OrgID": x_header}
-    logging.info(f"hrader: {x_header}, url: {url}")
 
     response = requests.get(url, headers=headers)
-    print(response.url)
+    logging.info(f"hrader: {x_header}, url: {response.url}")
+
     response.raise_for_status()
 
     data = response.json().get('data', {})
@@ -72,7 +91,7 @@ def get_graph_data(prometheus_url, query, start_time, end_time, x_header=""):
 
     if not result:
         return None
-
+    print(result)
     serials = []
     for sl in result:
         ts = [item[0] for item in sl.get('values', [])]
@@ -87,6 +106,7 @@ def get_graph_data(prometheus_url, query, start_time, end_time, x_header=""):
         'title': query,
         'serials': serials
     }
+
 
 @time_es
 def plot_multi_line_svg(title, serials):
@@ -129,7 +149,6 @@ def handle_alert():
     generator_url = manager_notify["alerts"][0]["generatorURL"]
 
     query_expr = re.search(r"g0\.expr=(.*?)&", generator_url).group(1)
-
     graph_data = get_graph_data(
         prometheus_url=prometheus_url,
         query=query_expr,
@@ -144,6 +163,7 @@ def handle_alert():
 
 @app.route('/alert_svg', methods=['POST'])
 def handle_alert_svg():
+    GRAPH_DURATION = 30
     manager_notify = request.json
     generator_url = manager_notify["alerts"][0]["generatorURL"]
     status = manager_notify["alerts"][0]["status"]
@@ -152,17 +172,22 @@ def handle_alert_svg():
     # 从generatorURL字段中提取查询表达式和时间戳信息
     query_expr = re.search(r"g0\.expr=(.*?)&", generator_url).group(1)
 
+    # replace comparison strings, quary all serial...
+    query_expr = regenerate_quary_for_instance(manager_notify)
+
     if manager_notify["alerts"][0]["status"] == "reslved":
         start_time = int(datetime.strptime(
-            manager_notify["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) - (20*60)
+            manager_notify["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) - (GRAPH_DURATION*60)
         end_time = int(datetime.strptime(
             manager_notify["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp())
     else:
         start_time = int(datetime.strptime(
-            manager_notify["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) - (20*60)
+            manager_notify["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) - (GRAPH_DURATION*60)
         end_time = int(datetime.strptime(
             manager_notify["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp())
 
+    instanceId = list(map(lambda x: x['labels']["instance"], manager_notify["alerts"]))
+    print(instanceId)
     graph_data = get_graph_data(
         prometheus_url=prometheus_url,
         query=query_expr,
@@ -170,6 +195,12 @@ def handle_alert_svg():
         end_time=end_time,
         x_header=get_X_header(ext_url)
     )
+
+    if graph_data == None:
+        logging.warning("graph_data is None, query_expr: {}".format(query_expr))
+        # status = 404
+        abort(404)
+
 
     svg_name = plot_multi_line_svg(graph_data['title'], graph_data['serials'])
     target_name = f"{fingerprint}-{status}.png"
@@ -181,4 +212,5 @@ def handle_alert_svg():
     return target_name
 
 
-app.run(debug=DEBUG, host="0.0.0.0")
+if __name__ == '__main__':
+    app.run(debug=DEBUG, host="0.0.0.0")
