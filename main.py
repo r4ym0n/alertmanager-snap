@@ -30,7 +30,6 @@ DEBUG = True
 prometheus_url = config['prometheus']['endpoint']
 bucket_name = config['s3']['bucket_name']
 region_name = config['s3']['region_name']
-        
 
 def time_es(func):
     def wrapper(*args, **kwargs):
@@ -57,10 +56,14 @@ def data_instance_filter(alerts, graph_data, instanceIdZips):
     info = get_current_business_info(alerts)
     if graph_data is None:
         return None
+
+    instance_ids = [x[0] for x in instanceIdZips]
+    instance_names = [x[1] for x in instanceIdZips]
+
     if info['type'] == 1:
-        return list(filter(lambda x: x['metric']['instance'] in map(lambda y : y[0], instanceIdZips) and (lambda x: x['metric']['instance_name'] in map(lambda y : y[1], instanceIdZips)) ,  graph_data))
+        return list(filter(lambda x: x['metric']['instance'] in instance_ids and x['metric']['instance_name'] in instance_names, graph_data))
     elif info['type'] == 2:
-        return list(filter(lambda x: x['metric']['instance'] in map(lambda y : y[0], instanceIdZips) and (lambda x: x['metric']['instanceName'] in map(lambda y : y[1], instanceIdZips)) , graph_data))
+        return list(filter(lambda x: x['metric']['instance'] in instance_ids and x['metric']['instanceName'] in instance_names, graph_data))
     
 
 def get_id_from_alerts(alerts):
@@ -141,7 +144,6 @@ def make_serial_data(raw_data, name):
         'title': name,
         'serials': serials
     }
-
 
 @time_es
 def plot_multi_line_svg(title, serials):
