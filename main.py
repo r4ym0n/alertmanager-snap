@@ -16,17 +16,13 @@ import time
 import boto3
 from enum import Enum
 
-
 logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
 
 config = json.load(open('.config.json'))
 
-
 DEBUG = True
 # DEBUG = False
-
-
 prometheus_url = config['prometheus']['endpoint']
 bucket_name = config['s3']['bucket_name']
 region_name = config['s3']['region_name']
@@ -42,7 +38,6 @@ def time_es(func):
         return result
     return wrapper
 
-
 @time_es
 def save_file_s3(local_file_path, filename):
     s3 = boto3.client('s3', region_name=region_name)
@@ -50,8 +45,6 @@ def save_file_s3(local_file_path, filename):
 
     # 上传文件到 S3
     s3.upload_file(local_file_path, bucket_name, s3_object_key)
-
-
 def data_instance_filter(alerts, graph_data, instanceIdZips):
     info = get_current_business_info(alerts)
     if graph_data is None:
@@ -89,7 +82,6 @@ def regenerate_quary_for_instance(alert_data):
 
     def remove_comparison_strings(s):
         # 非常非常Hack的部分，但是是好用的，先移除比较符号，再移除负小数，再移除小数，再移除整数
-        
         import re
         pattern = r'<\s*\d+|\s*>\s*\d+|<\s*\d+\s*>|\s*>\s*\d+\s*'  # 匹配所有大于小于空格数字组合的正则表达式
         result = re.sub(pattern, "", s)
@@ -105,14 +97,11 @@ def regenerate_quary_for_instance(alert_data):
         # result = re.sub(pattern, "", result)
         return result
 
-
     logging.info(query_expr)
     query_expr_no_comparison = remove_comparison_strings(query_expr)
     logging.info(query_expr_no_comparison)
 
     return query_expr_no_comparison
-
-
 @time_es
 def get_graph_data_raw(prometheus_url, query, start_time, end_time, x_header=""):
     url = f"{prometheus_url}/api/v1/query_range?query={query}&start={start_time}&end={end_time}&step=15s"
@@ -122,13 +111,9 @@ def get_graph_data_raw(prometheus_url, query, start_time, end_time, x_header="")
     logging.info(f"hrader: {x_header}, url: {response.url}")
 
     response.raise_for_status()
-
     data = response.json().get('data', {})
     result = data.get('result', [])
-    if not result:
-        return None
     return result
-
 
 def make_serial_data(raw_data, name):
     serials = []
@@ -228,7 +213,6 @@ def handle_alert_svg():
     query_expr = regenerate_quary_for_instance(alerts_data)
     print(query_expr)
 
-
     if alerts_data["alerts"][0]["status"] == "reslved":
         start_time = int(datetime.strptime(
             alerts_data["alerts"][0]["startsAt"], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) - (GRAPH_DURATION*60)
@@ -261,12 +245,10 @@ def handle_alert_svg():
         logging.warning(
             "graph_data is None, query_expr: {}".format(query_expr))
         abort(404)
-    
-    
+
     serial_data = make_serial_data(graph_data_of_instances, query_expr)
 
-    svg_name = plot_multi_line_svg(
-        serial_data['title'], serial_data['serials'])
+    svg_name = plot_multi_line_svg(serial_data['title'], serial_data['serials'])
     target_name = f"{fingerprint}-{status}.png"
 
     shutil.move(svg_name, f"./{target_name}")
